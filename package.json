@@ -10,7 +10,7 @@
     "postinstall": "nuxt prepare"
   },
   "dependencies": {
-    "@nuxt/content": "3.0.0-alpha.7",
+    "@nuxt/content": "^3.2.1",
     "@nuxtjs/mdc": "^0.9.5",
     "nuxt": "^3.14.1592",
     "shiki": "^1.23.1",
