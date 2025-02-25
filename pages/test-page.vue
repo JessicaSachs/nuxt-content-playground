@@ -1,7 +1,7 @@
 <template>
   <div class="test-page-container">
     <div>
-      <h1>Utils for Testing Below:</h1>
+      <!-- <h1>Utils for Testing Below:</h1>
       <hr />
       <input type="text" v-model="filename" />
       <button @click="fetchImage">Fetch Image</button>
@@ -10,80 +10,96 @@
       <h2>Page Data:</h2>
       <pre>{{ page }}</pre>
       <h2>Sanitized Content:</h2>
-      <pre>{{ sanitizeContent }}</pre>
+      <pre>{{ sanitizeContent }}</pre> -->
     </div>
     <div>
       <h1>Markdown Document Below</h1>
       <hr />
-      <ContentRenderer :value="sanitizeContent" />
+      <ContentRenderer :value="page" />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import type { MinimalNode, MinimalTree } from "@nuxt/content";
+import type {
+  MinimalElement,
+  MinimalNode,
+  MinimalText,
+  MinimalTree,
+} from "@nuxt/content";
 
-const response = ref("");
-const REPO_URL = "https://raw.githubusercontent.com/herodevs/cli/HEAD";
+type NodeVisitor = (
+  type: string,
+  props: Record<string, unknown>
+) => Record<string, unknown>;
 
-const filename = ref("nes-init.png");
-// First, fetch the page data
-const { data: page } = await useAsyncData(`page-hd-cli`, () => {
-  return queryCollection("cli")
+type TextNodeVisitor = (content: string) => string;
+
+interface VisitorConfig {
+  textNodeVisitors?: TextNodeVisitor[];
+  nodeVisitors?: NodeVisitor[];
+}
+
+function processTree(
+  minimalTree: MinimalTree,
+  config: VisitorConfig
+): MinimalTree {
+  return {
+    ...minimalTree,
+    value: minimalTree.value.map((node) => visitNode(node, config)),
+  };
+}
+
+function visitNode(
+  minimalNode: MinimalNode,
+  config: VisitorConfig
+): MinimalNode {
+  const { textNodeVisitors = [], nodeVisitors = [] } = config;
+
+  if (typeof minimalNode === "string") {
+    // it's a text node
+    const result: MinimalText = textNodeVisitors.reduce(
+      (content, visitor) => visitor(content),
+      minimalNode
+    );
+    return result;
+  }
+
+  // it's some other element
+  const [type, initialProps, ...children] = minimalNode;
+  const updatedChildren = children.map((child) => visitNode(child, config));
+  const updatedProps = nodeVisitors.reduce(
+    (props, visitor) => visitor(type, props),
+    initialProps
+  );
+  const result: MinimalElement = [type, updatedProps, ...updatedChildren];
+  return result;
+}
+
+function imgSrcRewriter(urlRoot: string): NodeVisitor {
+  return (type: string, props: Record<string, unknown>) => {
+    if (type !== "img") return props;
+
+    return {
+      ...props,
+      src: `${REPO_URL}${props.src}`,
+    };
+  };
+}
+
+// Usage example:
+// declare const someTree: MinimalTree;
+
+const REPO_URL = "https://raw.githubusercontent.com/herodevs/cli/HEAD/docs/";
+const { data: page } = await useAsyncData(`page-hd-cli`, async () => {
+  const response = await queryCollection("cli")
     .where("id", "=", "cli/docs/nes-init.md")
     .first();
-});
 
-const fetchImage = async () => {
-  response.value = await $fetch("/api/image/" + filename.value);
-};
-
-await fetchImage();
-
-/**
- * Then transform the content to be used in the page
- * 1. Handle duplicated UI
- *     * We need to remove the H1 if it exists and is identical
- *     * We need to extract the description from the first paragraph to ensure it's not duplicated
- * 2. Local Assets are not available relative to the Markdown sources they come from.
- *     * We need to transform the relative paths to absolute paths
- *     * OR I need to write a `server/api/[filename].ts` endpoint that returns the asset relative to the page
- *     * Option 2 is preferred, but I couldn't figure out how to do it.
- */
-const sanitizeContent = computed(() => {
-  return page.value;
-  if (!("value" in (page.value?.body ?? {}))) return page.value;
-
-  const body = page.value?.body as unknown as MinimalTree;
-  let bodyValue = body.value;
-  let result = { ...page.value };
-
-  console.log("Initial bodyValue:", JSON.stringify(bodyValue, null, 2));
-
-  // Process nodes recursively
-  const processNodes = (nodes: MinimalNode[]): MinimalNode[] => {};
-
-  // Extract H1 if it exists
-  if (bodyValue[0]?.[0] === "h1") {
-    console.log("Removing H1");
-    bodyValue = bodyValue.slice(1);
-  }
-
-  // Extract description from first paragraph if it exists
-  if (bodyValue[0]?.[0] === "p") {
-    console.log("Extracting description from paragraph");
-    result.description = bodyValue[0][1];
-    bodyValue = bodyValue.slice(1);
-  }
-
-  // Process all nodes and update the result
-  result.body = {
-    ...body,
-    value: processNodes(bodyValue),
-  };
-
-  console.log("Final result:", result);
-  return { ...result, ...result.meta };
+  response.body = processTree(response.body, {
+    nodeVisitors: [imgSrcRewriter(REPO_URL)],
+  });
+  return response;
 });
 </script>
 
