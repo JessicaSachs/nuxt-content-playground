@@ -1,12 +1,12 @@
 import { defineCollection } from '@nuxt/content'
 
 export const collections = {
-  vuejs: defineCollection({
+  cli: defineCollection({
     source: {
-      include: 'README.md',
-      repository: 'https://github.com/vuejs/core',
+      include: 'docs/**/*.md',
+      repository: 'https://github.com/herodevs/cli',
     },
-    type: 'page'
+    type: 'page',
   }),
   content: defineCollection({
     source: '**/*.md',
